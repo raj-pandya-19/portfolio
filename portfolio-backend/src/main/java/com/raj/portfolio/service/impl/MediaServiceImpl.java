@@ -1,33 +1,29 @@
 package com.raj.portfolio.service.impl;
 
-import com.raj.portfolio.config.FileStorageConfig;
+import com.raj.portfolio.config.SupabaseStorageConfig;
 import com.raj.portfolio.entity.Media;
 import com.raj.portfolio.exception.ResourceNotFoundException;
 import com.raj.portfolio.repository.MediaRepository;
 import com.raj.portfolio.service.MediaService;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 @Service
 public class MediaServiceImpl implements MediaService {
 
     private final MediaRepository mediaRepository;
-    private final Path uploadDirectory;
+    private final SupabaseStorageConfig supabaseStorageConfig;
+    private final RestClient restClient;
 
     public MediaServiceImpl(
             MediaRepository mediaRepository,
-            FileStorageConfig config
+            SupabaseStorageConfig supabaseStorageConfig
     ) {
         this.mediaRepository = mediaRepository;
-
-        this.uploadDirectory = Paths.get(config.getUploadDir())
-                .toAbsolutePath()
-                .normalize();
+        this.supabaseStorageConfig = supabaseStorageConfig;
+        this.restClient = RestClient.builder().build();
     }
 
     @Override
@@ -66,28 +62,50 @@ public class MediaServiceImpl implements MediaService {
             return;
         }
 
+        String bucket = supabaseStorageConfig.getBucket();
+
+        String marker =
+                "/storage/v1/object/public/"
+                        + bucket
+                        + "/";
+
+        int markerIndex = url.indexOf(marker);
+
+        if (markerIndex < 0) {
+            throw new IllegalArgumentException(
+                    "Invalid Supabase Storage URL"
+            );
+        }
+
+        String storagePath =
+                url.substring(markerIndex + marker.length());
+
+        String deleteUrl =
+                supabaseStorageConfig.getUrl()
+                        .replaceAll("/$", "")
+                        + "/storage/v1/object/"
+                        + bucket
+                        + "/"
+                        + storagePath;
+
         try {
-            String relativePath = url.startsWith("/")
-                    ? url.substring(1)
-                    : url;
 
-            Path filePath = Paths.get(relativePath)
-                    .toAbsolutePath()
-                    .normalize();
+            restClient.delete()
+                    .uri(deleteUrl)
+                    .header(
+                            "Authorization",
+                            "Bearer " + supabaseStorageConfig.getSecretKey()
+                    )
+                    .header(
+                            "apikey",
+                            supabaseStorageConfig.getSecretKey()
+                    )
+                    .retrieve()
+                    .toBodilessEntity();
 
-            if (!filePath.startsWith(uploadDirectory)) {
-                throw new IllegalArgumentException(
-                        "Invalid media file path"
-                );
-            }
-
-            if (Files.exists(filePath)) {
-                Files.delete(filePath);
-            }
-
-        } catch (IOException exception) {
+        } catch (Exception exception) {
             throw new RuntimeException(
-                    "Failed to delete physical file",
+                    "Failed to delete file from Supabase Storage",
                     exception
             );
         }

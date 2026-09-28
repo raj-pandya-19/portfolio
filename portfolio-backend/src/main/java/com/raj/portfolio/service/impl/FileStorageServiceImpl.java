@@ -1,19 +1,14 @@
 package com.raj.portfolio.service.impl;
 
-import com.raj.portfolio.config.FileStorageConfig;
+import com.raj.portfolio.config.SupabaseStorageConfig;
 import com.raj.portfolio.entity.Media;
 import com.raj.portfolio.service.FileStorageService;
 import com.raj.portfolio.service.MediaService;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.Set;
 import java.util.UUID;
 
@@ -36,18 +31,17 @@ public class FileStorageServiceImpl implements FileStorageService {
             "image/webp"
     );
 
-    private final Path uploadDirectory;
+    private final SupabaseStorageConfig supabaseStorageConfig;
     private final MediaService mediaService;
+    private final RestClient restClient;
 
     public FileStorageServiceImpl(
-            FileStorageConfig config,
+            SupabaseStorageConfig supabaseStorageConfig,
             MediaService mediaService
     ) {
-        this.uploadDirectory = Paths.get(config.getUploadDir())
-                .toAbsolutePath()
-                .normalize();
-
+        this.supabaseStorageConfig = supabaseStorageConfig;
         this.mediaService = mediaService;
+        this.restClient = RestClient.builder().build();
     }
 
     @Override
@@ -71,12 +65,6 @@ public class FileStorageServiceImpl implements FileStorageService {
     ) {
 
         try {
-            Path targetDirectory = uploadDirectory
-                    .resolve(folder)
-                    .normalize();
-
-            Files.createDirectories(targetDirectory);
-
             String originalFilename = StringUtils.cleanPath(
                     file.getOriginalFilename() == null
                             ? ""
@@ -88,40 +76,62 @@ public class FileStorageServiceImpl implements FileStorageService {
             String generatedFilename =
                     UUID.randomUUID() + extension;
 
-            Path targetFile = targetDirectory
-                    .resolve(generatedFilename)
-                    .normalize();
+            String storagePath =
+                    folder + "/" + generatedFilename;
 
-            if (!targetFile.startsWith(targetDirectory)) {
-                throw new IllegalArgumentException("Invalid file path");
-            }
+            String uploadUrl =
+                    supabaseStorageConfig.getUrl()
+                            .replaceAll("/$", "")
+                            + "/storage/v1/object/"
+                            + supabaseStorageConfig.getBucket()
+                            + "/"
+                            + storagePath;
 
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(
-                        inputStream,
-                        targetFile,
-                        StandardCopyOption.REPLACE_EXISTING
-                );
-            }
+            restClient.post()
+                    .uri(uploadUrl)
+                    .header(
+                            "Authorization",
+                            "Bearer " + supabaseStorageConfig.getSecretKey()
+                    )
+                    .header(
+                            "apikey",
+                            supabaseStorageConfig.getSecretKey()
+                    )
+                    .header(
+                            "Content-Type",
+                            file.getContentType()
+                    )
+                    .header(
+                            "x-upsert",
+                            "false"
+                    )
+                    .body(file.getBytes())
+                    .retrieve()
+                    .toBodilessEntity();
 
-            String fileUrl =
-                    "/uploads/" + folder + "/" + generatedFilename;
+            String publicUrl =
+                    supabaseStorageConfig.getUrl()
+                            .replaceAll("/$", "")
+                            + "/storage/v1/object/public/"
+                            + supabaseStorageConfig.getBucket()
+                            + "/"
+                            + storagePath;
 
             Media media = new Media();
             media.setOriginalName(originalFilename);
             media.setStoredName(generatedFilename);
             media.setFileType(file.getContentType());
             media.setFileSize(file.getSize());
-            media.setUrl(fileUrl);
+            media.setUrl(publicUrl);
             media.setCategory(category);
 
             mediaService.saveMedia(media);
 
-            return fileUrl;
+            return publicUrl;
 
-        } catch (IOException exception) {
+        } catch (Exception exception) {
             throw new RuntimeException(
-                    "Failed to store file",
+                    "Failed to store file in Supabase Storage",
                     exception
             );
         }
