@@ -12,13 +12,16 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${file.upload-dir:uploads}")
     private String uploadDir;
 
+    @Value("${portfolio.frontend-url:http://localhost:5173}")
+    private String frontendUrl;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
 
         registry.addMapping("/api/**")
                 .allowedOrigins(
-                        "http://localhost:3000",
-                        "http://localhost:5173"
+                        frontendUrl,
+                        "http://localhost:3000"
                 )
                 .allowedMethods(
                         "GET",
