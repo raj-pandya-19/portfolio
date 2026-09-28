@@ -1,0 +1,31 @@
+.section-heading {
+  margin-bottom: var(--space-7);
+  display: flex;
+  flex-direction: column;
+}
+
+.section-heading.text-center {
+  align-items: center;
+  text-align: center;
+}
+
+.section-eyebrow {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
+  margin-bottom: var(--space-2);
+}
+
+.section-title {
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-3);
+}
+
+.section-title-line {
+  width: 48px;
+  height: 3px;
+  background-color: var(--color-accent);
+  border-radius: var(--radius-full);
+}
